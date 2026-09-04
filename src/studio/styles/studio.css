@@ -1,0 +1,112 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--ink);
+  font: 13px/1.45 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Layout shell: Topbar / [LayerList | Viewport | Inspector] / Timeline */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  /* Opaque and stacked above the z-index:-1 HTML-in-Canvas host, which must stay
+     inside the viewport to paint at all (see sceneBuilder). */
+  position: relative;
+  z-index: 0;
+  background: var(--bg-0);
+}
+
+.app-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-main > .viewport {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-error {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  text-align: center;
+  background: var(--bg-0);
+  color: var(--ink-2);
+}
+
+.app-error strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.app-error code {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

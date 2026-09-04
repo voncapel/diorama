@@ -1,0 +1,45 @@
+:root {
+  /* Surfaces */
+  --bg-0: oklch(0.155 0.006 70);
+  --bg-1: oklch(0.195 0.006 70);
+  --bg-2: oklch(0.235 0.007 70);
+  --bg-3: oklch(0.28 0.008 70);
+  --void: oklch(0.115 0.005 70);
+
+  /* Lines */
+  --line: oklch(0.30 0.008 70);
+  --line-strong: oklch(0.40 0.01 70);
+
+  /* Ink */
+  --ink: oklch(0.93 0.008 80);
+  --ink-2: oklch(0.70 0.01 80);
+  --ink-3: oklch(0.52 0.01 80);
+
+  /* Accent */
+  --accent: oklch(0.80 0.16 70);
+  --accent-soft: oklch(0.80 0.16 70 / 0.18);
+  --accent-ink: oklch(0.20 0.03 70);
+  --playhead: oklch(0.70 0.20 30);
+  --danger: oklch(0.68 0.19 25);
+
+  /* Typography */
+  --font-ui: "Inter", "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  /* Shape */
+  --radius-control: 4px;
+  --radius-item: 6px;
+  --radius-popover: 10px;
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur-base: 160ms;
+  --dur-slow: 180ms;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* Layout */
+  --topbar-height: 44px;
+  --layerlist-width: 240px;
+  --inspector-width: 300px;
+  --shadow-popover: 0 8px 24px oklch(0 0 0 / 0.45), 0 1px 2px oklch(0 0 0 / 0.4);
+}

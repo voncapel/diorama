@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+bridge/node_modules/
+
+# Build outputs
+dist/
+bridge/dist/
+
+# Operating system & editor files
+.DS_Store
+Thumbs.db
+*.local
+.env
+.env.*
+*.log

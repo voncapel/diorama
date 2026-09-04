@@ -1,0 +1,190 @@
+/* Viewport and composition frame styles */
+
+.viewport {
+  position: relative;
+  overflow: hidden;
+  background: var(--void);
+  user-select: none;
+  touch-action: none;
+}
+
+.viewport[data-tool="orbit"] {
+  cursor: grab;
+}
+
+.viewport[data-tool="orbit"]:active {
+  cursor: grabbing;
+}
+
+.viewport[data-tool="select"] {
+  cursor: default;
+}
+
+.viewport[data-tool="select"][data-hover-selected="true"] {
+  cursor: move;
+}
+
+.viewport[data-tool="focus"] {
+  cursor: crosshair;
+}
+
+/* Mask overscan */
+.frame-stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: background-color var(--dur-fast) var(--ease-out-quart);
+}
+
+.frame-inside {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-out-quart),
+    opacity var(--dur-fast) var(--ease-out-quart);
+}
+
+.viewport-canvas {
+  position: absolute;
+  display: block;
+}
+
+.frame-overlay {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--line-strong);
+  box-sizing: border-box;
+}
+
+.frame-guide-line {
+  position: absolute;
+  background: oklch(1 0 0 / 0.18);
+  pointer-events: none;
+}
+
+.frame-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  pointer-events: none;
+  user-select: none;
+}
+
+.viewport-hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+  pointer-events: none;
+  user-select: none;
+  max-width: 60%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overlay-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  text-align: center;
+  color: var(--ink-2);
+  background: color-mix(in oklch, var(--void) 85%, transparent);
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.overlay-message strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.overlay-message code {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* SVG Selection & Snapping Overlay */
+.sel-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.sel-hover-quad {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sel-layer-quad {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.sel-snap-line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.sel-handle {
+  width: 7px;
+  height: 7px;
+  fill: var(--bg-1);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  pointer-events: auto;
+  transition: fill var(--dur-fast) var(--ease-out-quart);
+}
+
+.sel-handle:hover {
+  fill: var(--accent);
+}
+
+/* Focus marker */
+.focus-marker {
+  pointer-events: none;
+}
+
+.focus-marker circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.focus-marker line {
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
+.focus-marker.locked circle,
+.focus-marker.locked line {
+  stroke-dasharray: none;
+}

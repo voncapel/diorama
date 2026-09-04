@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Diorama",
+  "version": "0.1.0",
+  "description": "Turns a live web page into an animated 3D scene via the native HTML-in-Canvas API.",
+  "minimum_chrome_version": "147",
+  "permissions": ["activeTab", "alarms", "debugger", "scripting", "storage", "tabs", "unlimitedStorage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:* https: data: blob:"
+  },
+  "action": {
+    "default_title": "Diorama — zap this page"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["studio.html", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

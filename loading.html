@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr" class="scheme-only-dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Diorama — Capture en cours</title>
+    <link rel="stylesheet" href="/src/loading/loading.css" />
+  </head>
+  <body>
+    <main class="capture-screen" aria-labelledby="capture-title">
+      <div class="ambient ambient-one" aria-hidden="true"></div>
+      <div class="ambient ambient-two" aria-hidden="true"></div>
+
+      <section class="capture-card">
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <p class="brand-name">Diorama</p>
+        </div>
+
+        <div class="scene" aria-hidden="true">
+          <div class="scene-grid"></div>
+          <div class="scene-layer scene-layer-back"></div>
+          <div class="scene-layer scene-layer-middle"></div>
+          <div class="scene-layer scene-layer-front"></div>
+          <div class="scan-line"></div>
+        </div>
+
+        <div class="copy" role="status" aria-live="polite">
+          <p class="eyebrow">Capture native en cours</p>
+          <h1 id="capture-title">On fige la scène.</h1>
+          <p class="description">
+            Diorama sépare les plans sans modifier votre page. Le Studio s’ouvrira automatiquement
+            dès que tout sera prêt.
+          </p>
+        </div>
+
+        <div class="progress" aria-label="Capture en cours">
+          <span></span>
+        </div>
+        <p class="footnote">Gardez cet onglet ouvert pendant quelques secondes.</p>
+      </section>
+    </main>
+  </body>
+</html>
