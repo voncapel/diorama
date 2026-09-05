@@ -50,7 +50,7 @@ button:disabled {
   background: var(--accent-soft);
 }
 
-/* Layout shell: Topbar / [LayerList | Viewport | Inspector] / Timeline */
+/* Layout shell: Topbar / [Viewport | Inspector] / Timeline */
 .app {
   display: flex;
   flex-direction: column;

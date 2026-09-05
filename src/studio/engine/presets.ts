@@ -363,6 +363,73 @@ export const PRESET_LIBRARY: PresetDef[] = [
       return out;
     },
   },
+  {
+    id: 'modal-open',
+    description: 'Ouverture dynamique d’un conteneur modal avec apparition échelonnée des enfants',
+    scope: 'layers',
+    params: [
+      { name: 'parentLength', default: 0.5, description: 'Durée ouverture parent en secondes' },
+      { name: 'childLength', default: 0.4, description: 'Durée apparition enfant en secondes' },
+      { name: 'delay', default: 0.08, description: 'Délai échelonné entre enfants en secondes' },
+      { name: 'offsetY', default: 24, description: 'Décalage vertical Y initial des enfants en px' },
+      { name: 'offsetZ', default: 20, description: 'Recul Z initial du parent en px' },
+      { name: 'scale', default: 85, description: 'Échelle initiale du parent en %' },
+    ],
+    build(ctx, at, params, layerIds) {
+      const targets = layerIds.length > 0 ? layerIds : ctx.zapLayerIds;
+      if (targets.length === 0) return [];
+
+      const parentId = targets[0]!;
+      const childIds = targets.slice(1);
+
+      const parentLength = Math.max(0.001, asNum(params.parentLength, 0.5));
+      const childLength = Math.max(0.001, asNum(params.childLength, 0.4));
+      const delay = Math.max(0, asNum(params.delay, 0.08));
+      const offsetY = asNum(params.offsetY, 24);
+      const offsetZ = asNum(params.offsetZ, 20);
+      const scaleParam = asNum(params.scale, 85);
+
+      const parentBase = ctx.layerBase?.[parentId];
+      const parentBaseScale = parentBase?.scale ?? 100;
+      const parentBaseOpacity = parentBase?.opacity ?? 100;
+      const parentBaseZ = parentBase?.z ?? (ctx.layerZ?.[parentId] ?? 60);
+
+      const t0 = clampT(at, ctx.duration);
+      const tParentEnd = clampT(at + parentLength, ctx.duration);
+      if (tParentEnd <= t0) return [];
+
+      const out: Keyframe[] = [];
+
+      const parentStartScale = parentBaseScale * (scaleParam / 100);
+      out.push(makeKeyframe(parentId, 'scale', t0, parentStartScale, 'linear'));
+      out.push(makeKeyframe(parentId, 'scale', tParentEnd, parentBaseScale, 'quart.out'));
+
+      out.push(makeKeyframe(parentId, 'opacity', t0, 0, 'linear'));
+      out.push(makeKeyframe(parentId, 'opacity', tParentEnd, parentBaseOpacity, 'quart.out'));
+
+      out.push(makeKeyframe(parentId, 'z', t0, parentBaseZ - offsetZ, 'linear'));
+      out.push(makeKeyframe(parentId, 'z', tParentEnd, parentBaseZ, 'quart.out'));
+
+      childIds.forEach((childId, i) => {
+        const childBase = ctx.layerBase?.[childId];
+        const childBaseY = childBase?.y ?? 0;
+        const childBaseOpacity = childBase?.opacity ?? 100;
+
+        // Start the internal cascade while the container is still settling.
+        const childStart = clampT(at + parentLength * 0.4 + i * delay, ctx.duration);
+        const childEnd = clampT(childStart + childLength, ctx.duration);
+        if (childEnd <= childStart) return;
+
+        out.push(makeKeyframe(childId, 'y', childStart, childBaseY + offsetY, 'linear'));
+        out.push(makeKeyframe(childId, 'y', childEnd, childBaseY, 'quart.out'));
+
+        out.push(makeKeyframe(childId, 'opacity', childStart, 0, 'linear'));
+        out.push(makeKeyframe(childId, 'opacity', childEnd, childBaseOpacity, 'quart.out'));
+      });
+
+      return out;
+    },
+  },
 ];
 
 export function presetInfos(): PresetInfo[] {

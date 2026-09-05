@@ -5,6 +5,7 @@ import type {
   CaptureLayer,
   FetchAssetResponse,
 } from '../shared/types';
+import { inferCaptureGroups } from '../shared/groups';
 
 /**
  * Style capture is exhaustive: every computed longhand that differs from the
@@ -903,6 +904,8 @@ export async function serializeCapture(input: SerializeInput = { zapped: [], clu
         ]
       : [];
 
+  const groups = inferCaptureGroups(layers);
+
   return {
     version: 1,
     source: {
@@ -923,5 +926,6 @@ export async function serializeCapture(input: SerializeInput = { zapped: [], clu
     fonts,
     layers,
     clusters,
+    groups,
   };
 }

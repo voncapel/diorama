@@ -13,8 +13,12 @@ import {
   Sun,
   Undo2,
   X,
+  Folder,
+  Sparkles,
+  Ungroup,
 } from 'lucide-react';
 import { useStudio } from '../store';
+import { childrenOfLayer, parentOfLayer } from '../../shared/groups';
 import type { InspectorTarget } from '../store';
 import {
   CHANNEL_GROUP_LABELS,
@@ -186,6 +190,10 @@ function LayerView() {
   const setLayerValue = useStudio((s) => s.setLayerValue);
   const setLayerFlags = useStudio((s) => s.setLayerFlags);
   const removeLayer = useStudio((s) => s.removeLayer);
+  const applyGroupOpening = useStudio((s) => s.applyGroupOpening);
+  const ungroup = useStudio((s) => s.ungroup);
+  const setLayerParent = useStudio((s) => s.setLayerParent);
+  const playhead = useStudio((s) => s.playhead);
   const { layers: resolvedLayers } = useEvaluatedValues();
 
   const ids = useMemo(() => selection.filter((id) => layers[id] !== undefined), [selection, layers]);
@@ -246,6 +254,10 @@ function LayerView() {
 
   const bgColor = single?.role === 'background' ? first.backgroundColor ?? single.backgroundColor ?? '#ffffff' : null;
 
+  const parentId = single ? parentOfLayer(bundle?.groups, single.id) : null;
+  const parentLayer = parentId ? bundle?.layers.find((l) => l.id === parentId) : null;
+  const childIds = single ? childrenOfLayer(bundle?.groups, single.id) : [];
+
   return (
     <div className="inspector-body">
       <div className="inspector-heading">
@@ -257,6 +269,64 @@ function LayerView() {
         </div>
         <span className="meta">{single ? (single.role === 'background' ? 'arrière-plan' : 'élément') : 'sélection multiple'}</span>
       </div>
+
+      {parentId && single && (
+        <div className="group-section" aria-label="Groupe">
+          <div className="group-section-header">
+            <Folder size={13} />
+            <span>Membre de groupe</span>
+          </div>
+          <div className="group-section-body">
+            Parent : <strong>{parentLayer ? parentLayer.label : parentId}</strong>
+          </div>
+          <div className="group-section-actions">
+            <button
+              type="button"
+              className="btn"
+              title="Détacher du parent"
+              aria-label="Détacher du parent"
+              onClick={() => setLayerParent(single.id, null)}
+            >
+              <Ungroup size={13} />
+              Détacher
+            </button>
+          </div>
+        </div>
+      )}
+
+      {childIds.length > 0 && single && (
+        <div className="group-section" aria-label="Groupe conteneur">
+          <div className="group-section-header">
+            <Folder size={13} />
+            <span>Groupe conteneur</span>
+          </div>
+          <div className="group-section-body">
+            Contient <span className="group-section-count">{childIds.length}</span> élément{childIds.length > 1 ? 's' : ''} interne{childIds.length > 1 ? 's' : ''}.
+          </div>
+          <div className="group-section-actions">
+            <button
+              type="button"
+              className="btn btn-accent"
+              title="Animer l’ouverture du groupe"
+              aria-label="Animer l’ouverture du groupe"
+              onClick={() => applyGroupOpening(single.id, playhead)}
+            >
+              <Sparkles size={13} />
+              Animer l’ouverture
+            </button>
+            <button
+              type="button"
+              className="btn"
+              title="Dégrouper les éléments"
+              aria-label="Dégrouper les éléments"
+              onClick={() => ungroup(single.id)}
+            >
+              <Ungroup size={13} />
+              Dégrouper
+            </button>
+          </div>
+        </div>
+      )}
 
       {bgColor !== null && single && (
         <ColorField

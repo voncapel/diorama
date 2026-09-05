@@ -1,7 +1,7 @@
 import { useEffect, useState, type RefObject } from 'react';
 
 /** Width of the header column, in px. */
-export const HEADER_W = 220;
+export const HEADER_W = 260;
 export const TOOLBAR_H = 36;
 export const RULER_H = 24;
 export const ROW_H = 28;

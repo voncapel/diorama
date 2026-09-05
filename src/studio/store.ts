@@ -1,5 +1,14 @@
 import { create } from 'zustand';
-import type { CaptureBundle, CaptureLayer } from '../shared/types';
+import type { CaptureBundle, CaptureGroup, CaptureLayer } from '../shared/types';
+import {
+  findContainerChildren,
+  inferCaptureGroups,
+  parentOfLayer,
+  sanitizeGroups,
+  setLayerParent as setLayerParentHelper,
+  reorderChild as reorderChildHelper,
+  dissolveGroup,
+} from '../shared/groups';
 import type {
   CameraChannelId,
   CameraValues,
@@ -27,7 +36,8 @@ import {
   resolveSceneValues,
   trackKey,
 } from './model/timeline';
-import { directLocal } from './engine/presets';
+import type { PresetContext } from './engine/presets';
+import { applyPreset, directLocal } from './engine/presets';
 import type { FrameFormatName, FrameState } from './engine/frame';
 import { DEFAULT_FRAME, FRAME_FORMATS } from './engine/frame';
 import type { ExportQualityName } from './export';
@@ -71,6 +81,7 @@ export interface TimelineUi {
   /** Layer ids whose channel sub-rows are expanded. */
   expanded: string[];
   snap: boolean;
+  collapsedGroups: string[];
 }
 
 interface StudioState {
@@ -164,6 +175,13 @@ interface StudioState {
 
   addLayers: (newLayers: CaptureLayer[], initialZ?: number) => void;
   removeLayer: (layerId: string) => void;
+  setLayerParent: (layerId: string, parentId: string | null, index?: number) => void;
+  groupLayers: (layerIds: string[]) => void;
+  ungroup: (layerIdOrGroupId: string) => void;
+  reorderChild: (parentId: string, childId: string, index: number) => void;
+  toggleGroupCollapsed: (layerId: string) => void;
+  createGroup: (parentId: string) => void;
+  applyGroupOpening: (groupIdOrParentId: string, at?: number) => void;
   runDirector: () => void;
 }
 
@@ -200,6 +218,32 @@ function upsertKeyframeAtPlayhead(
   }
   const sibling = keyframes.find((k) => k.layerId === layerId && k.channel === channel);
   return [...keyframes, makeKeyframe(layerId, channel, playhead, value, sibling?.easing)];
+}
+
+/**
+ * Pure helper merging keyframes by track and time.
+ * Upserts matching (layerId, channel, time) keyframes and appends new ones.
+ */
+export function mergeKeyframes(existing: Keyframe[], incoming: Keyframe[]): Keyframe[] {
+  const result = [...existing];
+  for (const kf of incoming) {
+    const existingIndex = result.findIndex(
+      (k) =>
+        k.layerId === kf.layerId &&
+        k.channel === kf.channel &&
+        Math.abs(k.time - kf.time) < 1e-3,
+    );
+    if (existingIndex >= 0) {
+      result[existingIndex] = {
+        ...result[existingIndex]!,
+        value: kf.value,
+        easing: kf.easing,
+      };
+    } else {
+      result.push(kf);
+    }
+  }
+  return result;
 }
 
 interface ChannelWriteState {
@@ -269,7 +313,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   hoveredLayerId: null,
   tool: 'select',
   inspector: 'layer',
-  timelineUi: { height: 260, zoom: 140, scroll: 0, expanded: [], snap: true },
+  timelineUi: { height: 260, zoom: 140, scroll: 0, expanded: [], snap: true, collapsedGroups: [] },
 
   exporting: false,
   exportProgress: 0,
@@ -292,8 +336,10 @@ export const useStudio = create<StudioState>((set, get) => ({
       const def = FRAME_FORMATS[format as keyof typeof FRAME_FORMATS];
       nextFrame = { ...nextFrame, format, width: def.width, height: def.height };
     }
+    const rawGroups = bundle.groups !== undefined ? bundle.groups : inferCaptureGroups(bundle.layers);
+    const groups = sanitizeGroups(rawGroups, bundle.layers);
     set({
-      bundle,
+      bundle: { ...bundle, groups },
       layers,
       selection: [],
       loading: false,
@@ -341,9 +387,52 @@ export const useStudio = create<StudioState>((set, get) => ({
     const sceneSettings = focusTarget !== s.sceneSettings.focusTarget
       ? { ...s.sceneSettings, focusTarget }
       : s.sceneSettings;
+
+    const currentGroups = s.bundle.groups ?? [];
+    const remappedGroups: CaptureGroup[] = [];
+    for (const group of currentGroups) {
+      const nextParentId = idRemap.get(group.parentId);
+      if (!nextParentId) continue;
+      const nextChildIds = group.childIds
+        .map((childId) => idRemap.get(childId))
+        .filter((id): id is string => !!id);
+      if (nextChildIds.length === 0) continue;
+      remappedGroups.push({
+        id: group.id,
+        parentId: nextParentId,
+        childIds: nextChildIds,
+      });
+    }
+
+    // Keep surviving Studio groups, then add only non-conflicting groups supplied
+    // by the incoming bundle. This avoids reviving invalid old ids or silently
+    // discarding legitimate groups created by another producer.
+    const nextGroups = [...remappedGroups];
+    const validLayerIds = new Set(bundle.layers.map((layer) => layer.id));
+    const claimedLayerIds = new Set(nextGroups.flatMap((group) => [group.parentId, ...group.childIds]));
+    const groupIds = new Set(nextGroups.map((group) => group.id));
+    const incomingGroups = bundle.groups !== undefined ? bundle.groups : inferCaptureGroups(bundle.layers);
+    for (const incoming of incomingGroups) {
+      if (!validLayerIds.has(incoming.parentId) || claimedLayerIds.has(incoming.parentId) || groupIds.has(incoming.id)) {
+        continue;
+      }
+      const childIds = incoming.childIds.filter(
+        (id) => id !== incoming.parentId && validLayerIds.has(id) && !claimedLayerIds.has(id),
+      );
+      if (childIds.length === 0) continue;
+      const group = { ...incoming, childIds };
+      nextGroups.push(group);
+      groupIds.add(group.id);
+      claimedLayerIds.add(group.parentId);
+      for (const id of group.childIds) claimedLayerIds.add(id);
+    }
+
     const brief = (bundle as any).intent?.brief;
     set({
-      bundle,
+      bundle: {
+        ...bundle,
+        groups: sanitizeGroups(nextGroups, bundle.layers),
+      },
       layers,
       keyframes,
       selection,
@@ -497,6 +586,14 @@ export const useStudio = create<StudioState>((set, get) => ({
         : [...s.timelineUi.expanded, layerId];
       return { timelineUi: { ...s.timelineUi, expanded } };
     }),
+  toggleGroupCollapsed: (layerId) =>
+    set((s) => {
+      const collapsed = s.timelineUi.collapsedGroups ?? [];
+      const collapsedGroups = collapsed.includes(layerId)
+        ? collapsed.filter((id) => id !== layerId)
+        : [...collapsed, layerId];
+      return { timelineUi: { ...s.timelineUi, collapsedGroups } };
+    }),
 
   setKeyframes: (keyframes) => set({ keyframes }),
   keyAtPlayhead: (layerId, channel, value) => {
@@ -630,7 +727,9 @@ export const useStudio = create<StudioState>((set, get) => ({
       if (existing) existing.memberIds = [...new Set([...existing.memberIds, layer.id])];
       else clusters.push({ id: layer.clusterId, score: 1, memberIds: [layer.id] });
     }
-    set({ bundle: { ...s.bundle, layers: [...s.bundle.layers, ...trulyNew], clusters }, layers });
+    const combinedLayers = [...s.bundle.layers, ...trulyNew];
+    const groups = sanitizeGroups(s.bundle.groups ? [...s.bundle.groups] : [], combinedLayers);
+    set({ bundle: { ...s.bundle, layers: combinedLayers, clusters, groups }, layers });
   },
 
   removeLayer: (layerId) => {
@@ -641,6 +740,10 @@ export const useStudio = create<StudioState>((set, get) => ({
     const clusters = s.bundle.clusters
       .map((c) => ({ ...c, memberIds: c.memberIds.filter((id) => id !== layerId) }))
       .filter((c) => c.memberIds.length > 0);
+    const currentGroups = s.bundle.groups ?? [];
+    const dissolved = dissolveGroup(currentGroups, layerId);
+    const remainingLayers = s.bundle.layers.filter((l) => l.id !== layerId);
+    const nextGroups = sanitizeGroups(dissolved, remainingLayers);
     const focusTarget =
       s.sceneSettings.focusTarget?.layerId === layerId ? null : s.sceneSettings.focusTarget;
     const sceneSettings =
@@ -648,11 +751,147 @@ export const useStudio = create<StudioState>((set, get) => ({
         ? { ...s.sceneSettings, focusTarget }
         : s.sceneSettings;
     set({
-      bundle: { ...s.bundle, layers: s.bundle.layers.filter((l) => l.id !== layerId), clusters },
+      bundle: { ...s.bundle, layers: remainingLayers, clusters, groups: nextGroups },
       layers,
       keyframes: s.keyframes.filter((kf) => kf.layerId !== layerId),
       selection: s.selection.filter((id) => id !== layerId),
       sceneSettings,
+    });
+  },
+
+  setLayerParent: (layerId, parentId, index) => {
+    const s = get();
+    if (!s.bundle) return;
+    const nextGroups = setLayerParentHelper(s.bundle.groups, s.bundle.layers, layerId, parentId, index);
+    set({ bundle: { ...s.bundle, groups: nextGroups } });
+  },
+
+  groupLayers: (layerIds) => {
+    const s = get();
+    if (!s.bundle || layerIds.length <= 1) return;
+    const validLayers = s.bundle.layers.filter((l) => l.role === 'zap' && layerIds.includes(l.id));
+    if (validLayers.length <= 1) return;
+
+    // Largest surface area becomes parent
+    const sorted = [...validLayers].sort((a, b) => {
+      const areaA = a.rect.w * a.rect.h;
+      const areaB = b.rect.w * b.rect.h;
+      if (Math.abs(areaB - areaA) > 1e-4) return areaB - areaA;
+      if (a.order !== b.order) return a.order - b.order;
+      return a.id.localeCompare(b.id);
+    });
+
+    const parent = sorted[0]!;
+    const children = sorted.slice(1);
+
+    let currentGroups = s.bundle.groups ?? [];
+    for (const child of children) {
+      currentGroups = setLayerParentHelper(currentGroups, s.bundle.layers, child.id, parent.id);
+    }
+    set({ bundle: { ...s.bundle, groups: currentGroups } });
+  },
+
+  ungroup: (groupIdOrParentId) => {
+    const s = get();
+    if (!s.bundle) return;
+    const currentGroups = s.bundle.groups ?? [];
+    const targetGroup = currentGroups.find(
+      (g) =>
+        g.id === groupIdOrParentId ||
+        g.parentId === groupIdOrParentId ||
+        g.childIds.includes(groupIdOrParentId),
+    );
+    if (!targetGroup) return;
+
+    const nextGroups = dissolveGroup(currentGroups, targetGroup.parentId);
+    set({
+      bundle: {
+        ...s.bundle,
+        groups: sanitizeGroups(nextGroups, s.bundle.layers),
+      },
+    });
+  },
+
+  reorderChild: (parentId, childId, index) => {
+    const s = get();
+    if (!s.bundle) return;
+    const nextGroups = reorderChildHelper(s.bundle.groups, parentId, childId, index);
+    set({ bundle: { ...s.bundle, groups: nextGroups } });
+  },
+
+  createGroup: (parentId: string) => {
+    const s = get();
+    if (!s.bundle) return;
+    const zapLayers = s.bundle.layers.filter((l) => l.role === 'zap');
+    const parent = zapLayers.find((l) => l.id === parentId);
+    if (!parent) return;
+
+    const currentGroups = s.bundle.groups ?? [];
+    const potentialChildren = findContainerChildren(parent, zapLayers);
+    const availableChildren = potentialChildren.filter(
+      (c) => c.id !== parent.id && parentOfLayer(currentGroups, c.id) === null,
+    );
+
+    if (availableChildren.length === 0) return;
+
+    let nextGroups = currentGroups;
+    for (const child of availableChildren) {
+      nextGroups = setLayerParentHelper(nextGroups, s.bundle.layers, child.id, parent.id);
+    }
+    set({ bundle: { ...s.bundle, groups: nextGroups } });
+  },
+
+  applyGroupOpening: (groupIdOrParentId: string, at?: number) => {
+    const s = get();
+    if (!s.bundle) return;
+    const currentGroups = s.bundle.groups ?? [];
+    const group = currentGroups.find(
+      (g) =>
+        g.id === groupIdOrParentId ||
+        g.parentId === groupIdOrParentId ||
+        g.childIds.includes(groupIdOrParentId),
+    );
+    if (!group) return;
+
+    const targetIds = [group.parentId, ...group.childIds];
+    const applyTime = at !== undefined ? Math.min(s.duration, Math.max(0, at)) : s.playhead;
+
+    const layerZ: Record<string, number> = {};
+    const layerBase: Record<string, LayerValues> = {};
+    const animatedChannels: Record<string, string[]> = {};
+
+    for (const id in s.layers) {
+      layerZ[id] = s.layers[id]!.values.z;
+      layerBase[id] = s.layers[id]!.values;
+    }
+
+    for (const kf of s.keyframes) {
+      if (kf.layerId) {
+        const arr = animatedChannels[kf.layerId] ?? [];
+        if (!arr.includes(kf.channel)) {
+          arr.push(kf.channel);
+        }
+        animatedChannels[kf.layerId] = arr;
+      }
+    }
+
+    const ctx: PresetContext = {
+      zapLayerIds: targetIds,
+      baseDistance: s.camera.distance,
+      baseCamera: s.camera,
+      duration: s.duration,
+      layerRects: {},
+      layerZ,
+      layerBase,
+      animatedChannels,
+    };
+
+    const newKeyframes = applyPreset('modal-open', ctx, applyTime, {}, targetIds);
+    const updatedKeyframes = mergeKeyframes(s.keyframes, newKeyframes);
+
+    set({
+      keyframes: updatedKeyframes,
+      playhead: applyTime,
     });
   },
 

@@ -11,6 +11,7 @@ import type { CameraValues, LayerValues, SceneValues } from './model/channels';
 import type { LayerState, SceneSettings } from './store';
 import type { FrameState } from './engine/frame';
 import { resolveFocus } from './engine/focus';
+import type { CaptureGroup } from '../shared/types';
 
 export interface ExportOptions {
   width: number;
@@ -96,6 +97,7 @@ export interface ExportInput {
   layers: Record<string, LayerState>;
   scene: SceneValues;
   sceneSettings: SceneSettings;
+  groups?: CaptureGroup[];
   options?: Partial<ExportOptions>;
   onProgress?: (ratio: number) => void;
 }
@@ -105,7 +107,7 @@ export interface ExportInput {
  * The captured clone is inert, so layer snapshots stay valid for the whole run.
  */
 export async function exportMp4(input: ExportInput): Promise<Blob> {
-  const { renderer, keyframes, camera, layers, scene, sceneSettings, onProgress } = input;
+  const { renderer, keyframes, camera, layers, scene, sceneSettings, groups, onProgress } = input;
   const opts: ExportOptions = { ...DEFAULT_EXPORT, ...input.options };
   const samples = Math.max(1, Math.round(opts.motionBlurSamples));
 
@@ -155,6 +157,9 @@ export async function exportMp4(input: ExportInput): Promise<Blob> {
     height: renderer.canvas.clientHeight,
   };
 
+  if (groups) {
+    renderer.applyGroups(groups);
+  }
   renderer.setExportSize(opts.width, opts.height);
 
   const totalFrames = Math.max(1, Math.round(opts.duration * opts.fps));

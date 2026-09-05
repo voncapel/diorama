@@ -3,7 +3,6 @@ import { useStudio } from './store';
 import { BUNDLE_STORAGE_KEY } from '../shared/types';
 import type { CaptureBundle } from '../shared/types';
 import { Topbar } from './components/Topbar';
-import { LayerList } from './components/LayerList';
 import { Viewport } from './components/Viewport';
 import { Inspector } from './components/Inspector';
 import { Timeline } from './components/timeline/Timeline';
@@ -96,7 +95,6 @@ export function App() {
     <div className="app">
       <Topbar />
       <div className="app-main">
-        <LayerList />
         <Viewport />
         <Inspector />
       </div>

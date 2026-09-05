@@ -27,6 +27,7 @@ import type {
   SetSceneParams,
 } from '../../shared/agentProtocol';
 import type { CaptureBundle } from '../../shared/types';
+import { parentOfLayer } from '../../shared/groups';
 import { viewportHandle } from '../components/Viewport';
 import { fitRectInFrame, FRAME_FORMATS, frameAspect } from '../engine/frame';
 import type { FrameFormatName } from '../engine/frame';
@@ -171,6 +172,7 @@ export function startStudioAgent(): () => void {
           role: l.role,
           label: l.label,
           clusterId: l.clusterId,
+          parentId: parentOfLayer(bundle.groups, l.id),
           order: l.order,
           rect: {
             x: l.rect.x,
@@ -246,6 +248,7 @@ export function startStudioAgent(): () => void {
         },
         layers,
         clusters,
+        groups: bundle.groups ? bundle.groups.map((g) => ({ ...g, childIds: [...g.childIds] })) : [],
         channels,
         presets: presetInfos(),
         easings: Object.keys(EASINGS) as any,
@@ -323,6 +326,10 @@ export function startStudioAgent(): () => void {
 
       if (params.flags) {
         s.setLayerFlags(layerId, params.flags);
+      }
+
+      if (params.parentId !== undefined) {
+        s.setLayerParent(layerId, params.parentId);
       }
 
       if (params.values) {
@@ -525,6 +532,10 @@ export function startStudioAgent(): () => void {
       const zapLayers = bundle.layers
         .filter((l) => l.role === 'zap')
         .sort((a, b) => a.order - b.order);
+
+      if (params.preset === 'modal-open' && (!params.layerIds || params.layerIds.length < 2)) {
+        throw new Error('Le preset modal-open exige un parent suivi d’au moins un enfant dans layerIds.');
+      }
 
       const zapLayerIds = params.layerIds ?? zapLayers.map((l) => l.id);
 

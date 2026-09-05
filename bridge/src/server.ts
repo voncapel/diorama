@@ -380,6 +380,11 @@ export function createMcpServer(hub: ExtensionHub): McpServer {
         })
         .optional()
         .describe('Layer UI and rendering flags.'),
+      parentId: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Parent layer ID to nest this layer under, or null to detach to root.'),
       at: z.number().optional().describe('Timeline time in seconds to create keyframes.'),
       easing: z
         .enum(['linear', 'expo.out', 'quart.out', 'quint.inOut', 'cubic.inOut', 'back.out'])
@@ -554,6 +559,7 @@ export function createMcpServer(hub: ExtensionHub): McpServer {
           'hero-lift',
           'whip-pan',
           'settle',
+          'modal-open',
         ])
         .describe('Preset identifier.'),
       at: z.number().optional().describe('Start time in seconds (default 0).'),

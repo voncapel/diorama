@@ -1,3 +1,47 @@
+.group-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-item);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+
+.group-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+
+.group-section-body {
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+.group-section-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.group-section-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.group-section-actions .btn {
+  flex: 1;
+}
+
 /* Inspector panel, Section, NumberField, KeyDot, ColorField and view-specific blocks. */
 
 .inspector {

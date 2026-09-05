@@ -118,6 +118,7 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .tl-lanes {
@@ -132,7 +133,7 @@
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
+  padding-right: 8px;
   font-size: 12px;
   font-weight: 500;
   color: var(--ink);
@@ -140,10 +141,12 @@
   cursor: pointer;
   box-sizing: border-box;
   white-space: nowrap;
+  position: relative;
   transition: background-color var(--dur-fast) var(--ease-out-quart);
 }
 
-.tl-head:hover {
+.tl-head:hover,
+.tl-head.is-hovered {
   background-color: var(--bg-2);
 }
 
@@ -151,14 +154,145 @@
   background-color: var(--accent-soft);
 }
 
+.tl-head.is-selected.is-hovered {
+  background-color: color-mix(in srgb, var(--accent-soft) 85%, var(--bg-3));
+}
+
+.tl-head.is-dragging {
+  opacity: 0.45;
+  background-color: var(--bg-2);
+}
+
+.tl-head.is-drop-inside {
+  background-color: var(--accent-soft) !important;
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+}
+
+.tl-head--hidden .tl-head__label,
+.tl-head--hidden .layer-thumb {
+  opacity: 0.5;
+}
+
+.tl-head .layer-thumb {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
 .tl-head--sub {
-  padding-left: 28px;
   font-size: 11px;
   color: var(--ink-2);
 }
 
-.tl-head--sub:hover {
-  background-color: var(--bg-2);
+.tl-chevron-spacer {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.tl-chevron--group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart);
+}
+
+.tl-chevron--group:hover {
+  color: var(--ink);
+}
+
+.tl-chevron--group.is-open {
+  transform: rotate(90deg);
+}
+
+.tl-chevron--channels {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  flex-shrink: 0;
+  margin-left: 2px;
+  transition: transform var(--dur-fast) var(--ease-out-quart), color var(--dur-fast) var(--ease-out-quart), background-color var(--dur-fast) var(--ease-out-quart);
+}
+
+.tl-chevron--channels:hover {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+
+.tl-chevron--channels.is-open {
+  transform: rotate(180deg);
+}
+
+.tl-head__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  height: 15px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tl-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out-quart);
+}
+
+.tl-head:hover .tl-head__actions,
+.tl-head.is-hovered .tl-head__actions,
+.tl-head.is-selected .tl-head__actions {
+  opacity: 1;
+}
+
+.tl-head__actions .icon-btn {
+  width: 18px;
+  height: 18px;
+}
+
+.tl-drop-line {
+  position: absolute;
+  height: 2px;
+  background: var(--accent);
+  right: 0;
+  pointer-events: none;
+  z-index: 20;
+  box-shadow: 0 0 4px var(--accent-soft);
 }
 
 .tl-chevron {
@@ -352,6 +486,16 @@
   box-shadow: 0 0 0 1px var(--bg-1);
 }
 
+.tl-kf.is-group-aggregate .tl-kf__shape {
+  border-color: oklch(0.72 0.20 310);
+  box-shadow: 0 0 0 1px var(--bg-1);
+}
+
+.tl-kf.is-group-aggregate.is-selected .tl-kf__shape {
+  background: oklch(0.72 0.20 310);
+  border-color: oklch(0.85 0.22 310);
+}
+
 .tl-pop {
   position: fixed;
   width: 240px;
@@ -485,4 +629,65 @@
 .tl-btn--danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 15%, transparent);
   color: var(--danger);
+}
+
+/* Context Menu */
+
+.tl-ctx {
+  position: fixed;
+  z-index: 100;
+  min-width: 180px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-popover);
+  padding: 4px;
+  font-size: 12px;
+  color: var(--ink);
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.tl-ctx__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color var(--dur-fast) var(--ease-out-quart);
+}
+
+.tl-ctx__item:hover:not(.is-disabled):not(:disabled) {
+  background: var(--bg-3);
+}
+
+.tl-ctx__item.is-disabled,
+.tl-ctx__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.tl-ctx__item.is-danger {
+  color: var(--danger);
+}
+
+.tl-ctx__item.is-danger:hover:not(.is-disabled):not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+}
+
+.tl-ctx__sep {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
 }

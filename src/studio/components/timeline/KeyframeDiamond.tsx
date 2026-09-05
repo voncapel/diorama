@@ -8,13 +8,20 @@ export interface KeyframeDiamondProps {
   selected: boolean;
   /** True when the mark stands for more than one keyframe. */
   aggregate: boolean;
+  /** True when keyframe(s) represent group aggregated keyframes from descendants. */
+  isGroupAggregate?: boolean;
   title?: string;
   onPointerDown: (ev: ReactPointerEvent<HTMLDivElement>, ids: string[]) => void;
   onDoubleClick: (ev: ReactMouseEvent<HTMLDivElement>, ids: string[]) => void;
 }
 
-export function KeyframeDiamond({ x, ids, selected, aggregate, title, onPointerDown, onDoubleClick }: KeyframeDiamondProps) {
-  const className = ['tl-kf', selected ? 'is-selected' : '', aggregate ? 'is-aggregate' : ''].filter(Boolean).join(' ');
+export function KeyframeDiamond({ x, ids, selected, aggregate, isGroupAggregate, title, onPointerDown, onDoubleClick }: KeyframeDiamondProps) {
+  const className = [
+    'tl-kf',
+    selected ? 'is-selected' : '',
+    aggregate ? 'is-aggregate' : '',
+    isGroupAggregate ? 'is-group-aggregate' : '',
+  ].filter(Boolean).join(' ');
   return (
     <div
       className={className}

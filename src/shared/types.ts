@@ -66,6 +66,25 @@ export interface CaptureCluster {
   memberIds: string[];
 }
 
+export interface CaptureGroup {
+  id: string;
+  parentId: string;
+  childIds: string[];
+}
+
+export interface TreeNode {
+  layer: CaptureLayer;
+  depth: number;
+  children: TreeNode[];
+}
+
+export interface FlattenedTreeNode {
+  layer: CaptureLayer;
+  depth: number;
+  hasChildren: boolean;
+  collapsed: boolean;
+}
+
 /** Stable `[data-dio-id="N"]` selectors of the picked elements, for re-seeding the overlay. */
 export interface CaptureSelection {
   selectors: string[];
@@ -118,6 +137,8 @@ export interface CaptureBundle {
   fonts: CaptureFont[];
   layers: CaptureLayer[];
   clusters: CaptureCluster[];
+  /** Optional captured container-child groups. */
+  groups?: CaptureGroup[];
   /** Optional: absent on bundles created before the accumulative selection flow. */
   selection?: CaptureSelection;
   /** User intent from picker or agent capture. */

@@ -45,6 +45,7 @@ export async function runExport(params: RunExportParams = {}): Promise<RunExport
       layers: st.layers,
       scene: st.scene,
       sceneSettings: st.sceneSettings,
+      groups: st.bundle?.groups,
       options: {
         duration: st.duration,
         width: size.width,

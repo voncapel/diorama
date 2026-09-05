@@ -4,7 +4,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import type { CaptureBundle, CaptureLayer } from '../../shared/types';
+import type { CaptureBundle, CaptureGroup, CaptureLayer } from '../../shared/types';
+import { parentOfLayer } from '../../shared/groups';
 import type { BuiltScene } from './sceneBuilder';
 import { PaintRecordUnavailableError } from './sceneBuilder';
 import { fitRectInFrame } from './frame';
@@ -82,6 +83,7 @@ export class DioramaRenderer {
   readonly camera: THREE.PerspectiveCamera;
   readonly gl: WebGL2RenderingContext;
   readonly layers = new Map<string, LayerObject>();
+  private currentGroups: CaptureGroup[] = [];
 
   private contextLost = false;
   private onContextLost = (ev: Event) => {
@@ -279,6 +281,36 @@ export class DioramaRenderer {
         cutout,
       });
     }
+
+    this.applyGroups(bundle.groups ?? []);
+  }
+
+  /**
+   * Rebuilds Three.js object parenting on the fly based on groups hierarchy.
+   * Idempotent: attaches children to their parent mesh or root scene.
+   */
+  applyGroups(groups: CaptureGroup[]) {
+    this.currentGroups = groups;
+    const parentOf = new Map<string, string>();
+    for (const g of groups) {
+      for (const cid of g.childIds) {
+        parentOf.set(cid, g.parentId);
+      }
+    }
+
+    for (const [id, obj] of this.layers) {
+      const parentId = parentOf.get(id);
+      const parentObj = parentId ? this.layers.get(parentId) : undefined;
+      if (parentObj) {
+        if (obj.mesh.parent !== parentObj.mesh) {
+          parentObj.mesh.add(obj.mesh);
+        }
+      } else {
+        if (obj.mesh.parent !== this.scene) {
+          this.scene.add(obj.mesh);
+        }
+      }
+    }
   }
 
   private dummyImage(w: number, h: number): HTMLCanvasElement {
@@ -376,10 +408,16 @@ export class DioramaRenderer {
       const shiftX = (1 - s) * pivotOffsetX;
       const shiftY = (1 - s) * pivotOffsetY;
 
+      const parentId = parentOfLayer(this.currentGroups, id);
+      const parentObj = parentId ? this.layers.get(parentId) : undefined;
+      const parentBaseX = parentObj ? parentObj.baseX : 0;
+      const parentBaseY = parentObj ? parentObj.baseY : 0;
+      const parentBaseZ = parentObj ? parentObj.baseZ : 0;
+
       obj.mesh.position.set(
-        obj.baseX + x + shiftX,
-        obj.baseY - y + shiftY,
-        obj.baseZ + z,
+        (obj.baseX - parentBaseX) + x + shiftX,
+        (obj.baseY - parentBaseY) - y + shiftY,
+        (obj.baseZ - parentBaseZ) + z,
       );
 
       obj.mesh.rotation.order = 'XYZ';
@@ -743,12 +781,31 @@ export class DioramaRenderer {
     if (obj.layer.role === 'background') {
       return { cx: 0, cy: 0, w: obj.width, h: obj.height };
     }
+    this.scene.updateMatrixWorld(true);
+    const worldPos = new THREE.Vector3();
+    obj.mesh.getWorldPosition(worldPos);
+    const worldScale = new THREE.Vector3();
+    obj.mesh.getWorldScale(worldScale);
     return {
-      cx: obj.mesh.position.x,
-      cy: obj.mesh.position.y,
-      w: obj.width * obj.mesh.scale.x,
-      h: obj.height * obj.mesh.scale.y,
+      cx: worldPos.x,
+      cy: worldPos.y,
+      w: obj.width * worldScale.x,
+      h: obj.height * worldScale.y,
     };
+  }
+
+  /**
+   * Cumulative world scale of the parent of this layer (1 for root layers).
+   */
+  layerWorldScale(id: string): number {
+    const parentId = parentOfLayer(this.currentGroups, id);
+    if (!parentId) return 1;
+    const parentObj = this.layers.get(parentId);
+    if (!parentObj) return 1;
+    this.scene.updateMatrixWorld(true);
+    const worldScale = new THREE.Vector3();
+    parentObj.mesh.getWorldScale(worldScale);
+    return worldScale.x || 1;
   }
 
   /**
@@ -767,11 +824,16 @@ export class DioramaRenderer {
 
     const built = this.layers.get(layerId);
     if (built) {
+      this.scene.updateMatrixWorld(true);
+      const worldPos = new THREE.Vector3();
+      built.mesh.getWorldPosition(worldPos);
+      const worldScale = new THREE.Vector3();
+      built.mesh.getWorldScale(worldScale);
       return {
-        cx: built.mesh.position.x,
-        cy: built.mesh.position.y,
-        w: built.width * built.mesh.scale.x,
-        h: built.height * built.mesh.scale.y,
+        cx: worldPos.x,
+        cy: worldPos.y,
+        w: built.width * worldScale.x,
+        h: built.height * worldScale.y,
       };
     }
 
@@ -852,14 +914,20 @@ export class DioramaRenderer {
     let maxX = -Infinity;
     let maxY = -Infinity;
 
+    this.scene.updateMatrixWorld(true);
+    const worldPos = new THREE.Vector3();
+    const worldScale = new THREE.Vector3();
+
     for (const obj of this.layers.values()) {
       if (!obj.mesh.visible || obj.layer.role === 'background') continue;
-      const w = obj.width * obj.mesh.scale.x;
-      const h = obj.height * obj.mesh.scale.y;
-      minX = Math.min(minX, obj.mesh.position.x - w / 2);
-      maxX = Math.max(maxX, obj.mesh.position.x + w / 2);
-      minY = Math.min(minY, obj.mesh.position.y - h / 2);
-      maxY = Math.max(maxY, obj.mesh.position.y + h / 2);
+      obj.mesh.getWorldPosition(worldPos);
+      obj.mesh.getWorldScale(worldScale);
+      const w = obj.width * worldScale.x;
+      const h = obj.height * worldScale.y;
+      minX = Math.min(minX, worldPos.x - w / 2);
+      maxX = Math.max(maxX, worldPos.x + w / 2);
+      minY = Math.min(minY, worldPos.y - h / 2);
+      maxY = Math.max(maxY, worldPos.y + h / 2);
     }
 
     // Nothing built (or everything hidden): the source viewport is the only

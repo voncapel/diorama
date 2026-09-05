@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CaptureGroup } from '../../shared/types';
 import { useStudio } from '../store';
 import { DioramaRenderer } from '../engine/renderer';
 import { buildScene, disposeScene } from '../engine/sceneBuilder';
@@ -155,12 +156,18 @@ export function Viewport() {
     const ro = new ResizeObserver(measure);
     ro.observe(container);
 
+    let lastGroupsRef: CaptureGroup[] | undefined;
     let raf = 0;
     const loop = () => {
       const st = useStudio.getState();
       const currentBox = boxRef.current;
 
       if (!st.exporting && !st.agentRendering && rendererRef.current) {
+        if (st.bundle?.groups !== lastGroupsRef) {
+          lastGroupsRef = st.bundle?.groups;
+          renderer.applyGroups(st.bundle?.groups ?? []);
+        }
+
         const ev = evaluateTimeline(st.keyframes, st.playhead);
         const cam = resolveCameraValues(st.camera, ev.camera);
         resolvedCameraRef.current = cam;
@@ -724,8 +731,10 @@ export function Viewport() {
         // Distortion of side in world units
         const totalDx = pt.x - drag.initialPointerX;
         const totalDy = pt.y - drag.initialPointerY;
-        const worldDx = totalDx * worldPerPx;
-        const worldDy = totalDy * worldPerPx;
+        const parentScale = rendererRef.current?.layerWorldScale(targetId) ?? 1;
+        const factor = parentScale > 1e-4 ? parentScale : 1;
+        const worldDx = (totalDx * worldPerPx) / factor;
+        const worldDy = (totalDy * worldPerPx) / factor;
 
         switch (kind) {
           case 'edge-top':
@@ -854,9 +863,11 @@ export function Viewport() {
         };
 
         for (const [id, init] of Object.entries(drag.initialValues || {})) {
+          const parentScale = rendererRef.current?.layerWorldScale(id) ?? 1;
+          const factor = parentScale > 1e-4 ? parentScale : 1;
           setLayerValues(id, {
-            x: Math.round(init.x + deltaWorldX),
-            y: Math.round(init.y + deltaWorldY),
+            x: Math.round(init.x + deltaWorldX / factor),
+            y: Math.round(init.y + deltaWorldY / factor),
           });
         }
       }

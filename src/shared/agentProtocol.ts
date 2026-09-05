@@ -13,6 +13,8 @@
  * writes them to disk.
  */
 
+import type { CaptureGroup } from './types';
+
 export const AGENT_BRIDGE_PORT = 47831;
 export const AGENT_PROTOCOL_VERSION = 1;
 
@@ -140,7 +142,8 @@ export type PresetId =
   | 'parallax-drift'
   | 'hero-lift'
   | 'whip-pan'
-  | 'settle';
+  | 'settle'
+  | 'modal-open';
 
 /** Keyframe as accepted and returned by the API (same shape as the Studio model). */
 export interface AgentKeyframe {
@@ -284,6 +287,8 @@ export interface SceneLayer {
   role: 'background' | 'zap';
   label: string;
   clusterId?: string;
+  /** Parent layer ID if grouped, or null if root. */
+  parentId: string | null;
   /** Stagger order among zap layers. */
   order: number;
   /** Captured page rect (CSS px, page coordinates). */
@@ -322,6 +327,8 @@ export interface GetSceneResult {
   sceneSettings: { lightEnabled: boolean; dofEnabled: boolean };
   layers: SceneLayer[];
   clusters: { id: string; memberIds: string[] }[];
+  /** Hierarchy of layer groups (can be nested: a child layer can also be a group parent). */
+  groups?: CaptureGroup[];
   keyframes?: AgentKeyframe[];
   /** Registry of animatable channels with their units and limits. */
   channels: ChannelInfo[];
@@ -365,6 +372,8 @@ export interface SetLayerParams {
   layerId: string;
   values?: Record<string, number>;
   flags?: { visible?: boolean; locked?: boolean; castShadow?: boolean };
+  /** Set or change the layer's parent group, or null to detach to root. */
+  parentId?: string | null;
   at?: number;
   easing?: EasingId;
 }
@@ -430,7 +439,7 @@ export interface ApplyPresetParams {
   at?: number;
   /** Preset-specific parameters, see `get_scene().presets`. */
   params?: Record<string, number | string>;
-  /** Layer ids in stagger order; default = all zap layers by `order`. */
+  /** Layer ids in stagger order; default = all zap layers by `order`. Required for `modal-open`: parent first, then children. */
   layerIds?: string[];
 }
 
