@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { LayerReveal } from './layerReveal';
+import { LayerExtrusion } from './layerExtrusion';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { LayerBokehPass } from './layerBokehPass';
 import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { CaptureBundle, CaptureGroup, CaptureLayer } from '../../shared/types';
@@ -46,6 +48,11 @@ export function uploadElementTexture(
 
 export interface LayerObject {
   layer: CaptureLayer;
+  /** Transform hierarchy is independent of the content surface. */
+  container: THREE.Group;
+  reveal: LayerReveal;
+  extrusion?: LayerExtrusion;
+  depthMaterial: THREE.MeshDepthMaterial;
   mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial | THREE.MeshBasicMaterial>;
   basicMaterial: THREE.MeshBasicMaterial;
   lambertMaterial: THREE.MeshLambertMaterial;
@@ -61,6 +68,7 @@ export interface LayerObject {
   origPositions: Float32Array;
   /** Background layers keep alphaTest at 0; zap layers cut out at 0.02. */
   cutout: number;
+  castShadowEnabled?: boolean;
 }
 
 const DEG2RAD = Math.PI / 180;
@@ -105,7 +113,7 @@ export class DioramaRenderer {
   private dummy = new THREE.Texture();
 
   private composer: EffectComposer | null = null;
-  private bokeh: BokehPass | null = null;
+  private bokeh: LayerBokehPass | null = null;
   private fxaa: FXAAPass | null = null;
   private dofEnabled = false;
   /** Kept so a composer created lazily can be sized like the current target. */
@@ -238,6 +246,7 @@ export class DioramaRenderer {
         depthWrite: true,
         alphaTest: cutout,
         toneMapped: false,
+        shadowSide: THREE.DoubleSide,
       });
 
       const lambertMaterial = new THREE.MeshLambertMaterial({
@@ -249,23 +258,46 @@ export class DioramaRenderer {
         depthWrite: true,
         alphaTest: cutout,
         toneMapped: false,
+        shadowSide: THREE.DoubleSide,
       });
 
       const mesh = new THREE.Mesh(geometry, this.lightEnabled ? lambertMaterial : basicMaterial);
+      const container = new THREE.Group();
+      container.name = `layer:${layer.id}`;
+      container.add(mesh);
+      const reveal = new LayerReveal(width, height);
+      const extrusion = isBackground ? undefined : new LayerExtrusion(texture ?? null, reveal, cutout);
+      if (extrusion) container.add(extrusion.mesh);
+      const depthMaterial = new THREE.MeshDepthMaterial({
+        depthPacking: THREE.RGBADepthPacking,
+        map: texture ?? null,
+        alphaTest: cutout,
+        shadowSide: THREE.DoubleSide,
+      });
+      if (!isBackground) {
+        reveal.attach(basicMaterial);
+        reveal.attach(lambertMaterial);
+        reveal.attach(depthMaterial, true);
+        mesh.customDepthMaterial = depthMaterial;
+      }
 
       const baseX = isBackground ? 0 : rect.x + rect.w / 2 - cx;
       const baseY = isBackground ? 0 : cy - (rect.y + rect.h / 2);
       const baseZ = isBackground ? 0 : 1 + layer.order;
 
       // Page coordinates (y down) → world coordinates (y up), centred.
-      mesh.position.set(baseX, baseY, baseZ);
+      container.position.set(baseX, baseY, baseZ);
 
       mesh.receiveShadow = true;
       mesh.castShadow = false;
 
-      this.scene.add(mesh);
+      this.scene.add(container);
       this.layers.set(layer.id, {
         layer,
+        container,
+        reveal,
+        extrusion,
+        depthMaterial,
         mesh,
         basicMaterial,
         lambertMaterial,
@@ -279,6 +311,7 @@ export class DioramaRenderer {
         baseZ,
         origPositions,
         cutout,
+        castShadowEnabled: !isBackground,
       });
     }
 
@@ -287,7 +320,7 @@ export class DioramaRenderer {
 
   /**
    * Rebuilds Three.js object parenting on the fly based on groups hierarchy.
-   * Idempotent: attaches children to their parent mesh or root scene.
+   * Idempotent: attaches containers to their parent container or root scene.
    */
   applyGroups(groups: CaptureGroup[]) {
     this.currentGroups = groups;
@@ -302,12 +335,12 @@ export class DioramaRenderer {
       const parentId = parentOf.get(id);
       const parentObj = parentId ? this.layers.get(parentId) : undefined;
       if (parentObj) {
-        if (obj.mesh.parent !== parentObj.mesh) {
-          parentObj.mesh.add(obj.mesh);
+        if (obj.container.parent !== parentObj.container) {
+          parentObj.container.add(obj.container);
         }
       } else {
-        if (obj.mesh.parent !== this.scene) {
-          this.scene.add(obj.mesh);
+        if (obj.container.parent !== this.scene) {
+          this.scene.add(obj.container);
         }
       }
     }
@@ -381,7 +414,11 @@ export class DioramaRenderer {
         obj.basicMaterial.color.set(bgCol);
         obj.lambertMaterial.color.set(bgCol);
         obj.mesh.material.opacity = o;
+        obj.container.visible = visible;
         obj.mesh.visible = visible;
+        obj.mesh.receiveShadow = true;
+        obj.mesh.castShadow = false;
+        obj.castShadowEnabled = false;
         this.renderer.setClearColor(new THREE.Color(bgCol), visible ? o : 0);
         continue;
       }
@@ -414,15 +451,16 @@ export class DioramaRenderer {
       const parentBaseY = parentObj ? parentObj.baseY : 0;
       const parentBaseZ = parentObj ? parentObj.baseZ : 0;
 
-      obj.mesh.position.set(
+      obj.container.position.set(
         (obj.baseX - parentBaseX) + x + shiftX,
         (obj.baseY - parentBaseY) - y + shiftY,
         (obj.baseZ - parentBaseZ) + z,
       );
 
-      obj.mesh.rotation.order = 'XYZ';
-      obj.mesh.rotation.set(rotX * DEG2RAD, rotY * DEG2RAD, rotZ * DEG2RAD);
-      obj.mesh.scale.set(s, s, 1);
+      obj.container.rotation.order = 'XYZ';
+      obj.container.rotation.set(rotX * DEG2RAD, rotY * DEG2RAD, rotZ * DEG2RAD);
+      obj.container.scale.set(s, s, 1);
+      obj.reveal.update(v?.reveal ?? 100, v?.revealAngle ?? 0, v?.revealFeather ?? 0);
 
       // Distort: modify 4 vertices of PlaneGeometry
       // PlaneGeometry(w, h, 1, 1) has 4 vertices:
@@ -464,16 +502,22 @@ export class DioramaRenderer {
       posArray[11] = orig[11] ?? 0;
 
       posAttr.needsUpdate = true;
+      obj.mesh.geometry.computeBoundingSphere();
+      obj.mesh.geometry.computeBoundingBox();
 
       // Material properties
       const mat = obj.mesh.material;
       mat.opacity = o;
       mat.alphaTest = obj.cutout * o;
+      obj.depthMaterial.alphaTest = obj.cutout * o;
+      obj.container.visible = visible;
       obj.mesh.visible = visible;
 
       const castShadowFlag = state?.castShadow ?? true;
+      obj.castShadowEnabled = castShadowFlag;
       obj.mesh.castShadow = castShadowFlag && this.lightEnabled;
       obj.mesh.receiveShadow = true;
+      obj.extrusion?.update(posArray, v?.thickness ?? 0, o, this.lightEnabled, obj.mesh.castShadow);
     }
   }
 
@@ -491,6 +535,7 @@ export class DioramaRenderer {
       this.directionalLight.shadow.camera.right = 3000;
       this.directionalLight.shadow.camera.top = 3000;
       this.directionalLight.shadow.camera.bottom = -3000;
+      this.directionalLight.shadow.camera.updateProjectionMatrix();
       this.scene.add(this.directionalLight);
       this.scene.add(this.directionalLight.target);
     }
@@ -511,6 +556,7 @@ export class DioramaRenderer {
           obj.mesh.material = obj.basicMaterial;
         }
         obj.mesh.castShadow = false;
+        this.syncExtrusion(obj);
       }
       return;
     }
@@ -522,6 +568,15 @@ export class DioramaRenderer {
       if (obj.mesh.material !== obj.lambertMaterial) {
         obj.mesh.material = obj.lambertMaterial;
       }
+      if (obj.layer.role === 'background') {
+        obj.mesh.receiveShadow = true;
+        obj.mesh.castShadow = false;
+      } else {
+        const canCast = obj.castShadowEnabled ?? true;
+        obj.mesh.castShadow = canCast && this.lightEnabled;
+        obj.mesh.receiveShadow = true;
+      }
+      this.syncExtrusion(obj);
     }
 
     const { lightAzimuth, lightElevation, lightIntensity, ambient, shadowSoftness, shadowOpacity } = values;
@@ -544,6 +599,10 @@ export class DioramaRenderer {
     this.directionalLight.shadow.intensity = shadowOpacity / 100;
   }
 
+  private syncExtrusion(obj: LayerObject) {
+    obj.extrusion?.setLighting(this.lightEnabled, obj.mesh.castShadow);
+  }
+
   /** Built lazily: the direct render path stays free when DoF is never used. */
   private ensureComposer(): EffectComposer {
     if (this.composer) return this.composer;
@@ -557,7 +616,7 @@ export class DioramaRenderer {
     );
     const composer = new EffectComposer(this.renderer, renderTarget);
     composer.addPass(new RenderPass(this.scene, this.camera));
-    const bokeh = new BokehPass(this.scene, this.camera, {
+    const bokeh = new LayerBokehPass(this.scene, this.camera, {
       focus: DEFAULT_CAMERA_VALUES.focus,
       aperture: DEFAULT_CAMERA_VALUES.aperture * 0.00001,
       maxblur: DEFAULT_CAMERA_VALUES.maxBlur * 0.01,
@@ -589,11 +648,21 @@ export class DioramaRenderer {
     uniforms.maxblur!.value = maxBlurUi * 0.01;
   }
 
+  private isLayerVisible(obj: LayerObject): boolean {
+    let node: THREE.Object3D | null = obj.mesh;
+    while (node) {
+      if (!node.visible) return false;
+      node = node.parent;
+    }
+    return true;
+  }
+
   /**
    * Raycast from normalized device coordinates (-1..1),
    * returns the id of the closest visible non-background layer.
    */
   pick(ndcX: number, ndcY: number): string | null {
+    this.scene.updateMatrixWorld(true);
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
 
@@ -602,12 +671,20 @@ export class DioramaRenderer {
 
     for (const [id, obj] of this.layers) {
       if (obj.layer.role === 'background') continue;
-      if (!obj.mesh.visible) continue;
+      if (!this.isLayerVisible(obj)) continue;
       candidates.push(obj.mesh);
       meshToId.set(obj.mesh, id);
+      if (obj.extrusion?.mesh.visible) {
+        candidates.push(obj.extrusion.mesh);
+        meshToId.set(obj.extrusion.mesh, id);
+      }
     }
 
-    const intersects = raycaster.intersectObjects(candidates, false);
+    const intersects = raycaster.intersectObjects(candidates, false).filter((hit) => {
+      const id = meshToId.get(hit.object as THREE.Mesh);
+      const obj = id ? this.layers.get(id) : undefined;
+      return obj && hit.uv && obj.reveal.alphaAt(hit.uv.x, hit.uv.y) > 0.02;
+    });
     if (intersects.length > 0 && intersects[0]?.object) {
       return meshToId.get(intersects[0].object as THREE.Mesh) ?? null;
     }
@@ -619,6 +696,7 @@ export class DioramaRenderer {
    * returns the closest intersection with layerId, UV coordinates and distance from camera.
    */
   pickFocus(ndcX: number, ndcY: number): { layerId: string; u: number; v: number; distance: number } | null {
+    this.scene.updateMatrixWorld(true);
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
 
@@ -626,12 +704,16 @@ export class DioramaRenderer {
     const meshToId = new Map<THREE.Mesh, string>();
 
     for (const [id, obj] of this.layers) {
-      if (!obj.mesh.visible) continue;
+      if (!this.isLayerVisible(obj)) continue;
       candidates.push(obj.mesh);
       meshToId.set(obj.mesh, id);
     }
 
-    const intersects = raycaster.intersectObjects(candidates, false);
+    const intersects = raycaster.intersectObjects(candidates, false).filter((hit) => {
+      const id = meshToId.get(hit.object as THREE.Mesh);
+      const obj = id ? this.layers.get(id) : undefined;
+      return obj && hit.uv && obj.reveal.alphaAt(hit.uv.x, hit.uv.y) > 0.02;
+    });
     const first = intersects[0];
     if (first && first.object && first.uv) {
       const layerId = meshToId.get(first.object as THREE.Mesh);
@@ -655,7 +737,7 @@ export class DioramaRenderer {
    */
   focusPointWorld(layerId: string, u: number, v: number): THREE.Vector3 | null {
     const obj = this.layers.get(layerId);
-    if (!obj || !obj.mesh.visible) return null;
+    if (!obj || !this.isLayerVisible(obj)) return null;
 
     obj.mesh.updateMatrixWorld(true);
 
@@ -740,7 +822,7 @@ export class DioramaRenderer {
     height: number,
   ): { x: number; y: number }[] | null {
     const obj = this.layers.get(id);
-    if (!obj || !obj.mesh.visible) return null;
+    if (!obj || !this.isLayerVisible(obj)) return null;
 
     obj.mesh.updateMatrixWorld(true);
 
@@ -804,7 +886,7 @@ export class DioramaRenderer {
     if (!parentObj) return 1;
     this.scene.updateMatrixWorld(true);
     const worldScale = new THREE.Vector3();
-    parentObj.mesh.getWorldScale(worldScale);
+    parentObj.container.getWorldScale(worldScale);
     return worldScale.x || 1;
   }
 
@@ -919,7 +1001,7 @@ export class DioramaRenderer {
     const worldScale = new THREE.Vector3();
 
     for (const obj of this.layers.values()) {
-      if (!obj.mesh.visible || obj.layer.role === 'background') continue;
+      if (!this.isLayerVisible(obj) || obj.layer.role === 'background') continue;
       obj.mesh.getWorldPosition(worldPos);
       obj.mesh.getWorldScale(worldScale);
       const w = obj.width * worldScale.x;
@@ -991,13 +1073,17 @@ export class DioramaRenderer {
 
   disposeLayers() {
     for (const obj of this.layers.values()) {
-      this.scene.remove(obj.mesh);
+      obj.container.removeFromParent();
+      obj.container.clear();
+      obj.depthMaterial.dispose();
+      obj.extrusion?.dispose();
       obj.mesh.geometry.dispose();
       obj.basicMaterial.dispose();
       obj.lambertMaterial.dispose();
       obj.texture?.dispose();
     }
     this.layers.clear();
+    this.currentGroups = [];
   }
 
   dispose() {

@@ -336,12 +336,12 @@ function LayerView() {
         />
       )}
 
-      {groups.map((group) => (
+      {groups.filter((group) => !anyBackground || (group !== 'reveal' && group !== 'volume')).map((group) => (
         <ChannelGroupSection
           key={group}
           group={group}
           defs={defs.filter((d) => d.group === group)}
-          defaultOpen={group === 'position' || group === 'rotation' || group === 'scale' || group === 'appearance'}
+          defaultOpen={group === 'position' || group === 'rotation' || group === 'scale' || group === 'appearance' || group === 'reveal' || group === 'volume'}
           valueOf={(def) => valueOf(def.id as LayerChannelId)}
           onChange={(def, v) => setAll(def.id as LayerChannelId, v)}
           keyTarget={ids}

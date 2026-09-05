@@ -1,0 +1,169 @@
+<!doctype html><html><meta charset="utf-8"><title>Shadow regression</title>
+<style>body{background:#20242b;color:white;font:16px system-ui}canvas{border:1px solid #777}</style>
+<p>Shadow regression: shadow casting, alpha cutout, reveal mask, toggles, contrast and DoF.</p><canvas id="preview"></canvas><pre id="result">Running…</pre>
+<script type="module">
+import { DioramaRenderer } from '/src/studio/engine/renderer.ts';
+import { DEFAULT_LAYER_VALUES, DEFAULT_SCENE_VALUES } from '/src/studio/model/channels.ts';
+
+const report = document.querySelector('#result');
+const checks = [];
+const check = (condition, message) => { if (!condition) throw new Error(message); checks.push(message); };
+
+try {
+  const canvas = document.querySelector('canvas');
+  const renderer = new DioramaRenderer(canvas);
+  window.shadowRenderer = renderer;
+  renderer.setExportSize(400, 200);
+  renderer.setFrameAspect(2);
+  renderer.camera.fov = 90;
+  renderer.camera.position.set(0, 0, 100);
+  renderer.camera.lookAt(0, 0, 0);
+  renderer.camera.updateProjectionMatrix();
+
+  const bgLayer = { id: 'bg', role: 'background', label: 'Background', order: 0, rect: { x: 0, y: 0, w: 400, h: 200 }, backgroundColor: '#ffffff' };
+  const cardLayer = { id: 'card', role: 'card', label: 'Card', order: 1, rect: { x: 150, y: 80, w: 100, h: 40 } };
+  const bundle = { viewport: { width: 400, height: 200 }, layers: [bgLayer, cardLayer], groups: [] };
+
+  const built = {
+    elements: new Map([['bg', document.body], ['card', document.body]]),
+    rects: new Map(),
+    captureLayerTexture: async (id, ctx, w, h) => {
+      // Left half opaque red, right half transparent
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#ff0000';
+      ctx.fillRect(0, 0, w / 2, h);
+    },
+  };
+
+  await renderer.buildLayers(bundle, built);
+
+  const cardObj = renderer.layers.get('card');
+  const bgObj = renderer.layers.get('bg');
+
+  check(cardObj.lambertMaterial.shadowSide === 2, 'Card material shadowSide is DoubleSide');
+  check(cardObj.depthMaterial.shadowSide === 2, 'Card customDepthMaterial shadowSide is DoubleSide');
+  check(bgObj.mesh.receiveShadow === true, 'Background receives shadows');
+  check(bgObj.mesh.castShadow === false, 'Background does not cast shadows');
+
+  const pixel = (x, y) => {
+    const p = new Uint8Array(4);
+    renderer.gl.readPixels(x, y, 1, 1, renderer.gl.RGBA, renderer.gl.UNSIGNED_BYTE, p);
+    return [...p];
+  };
+
+  const sceneLighting = {
+    ...DEFAULT_SCENE_VALUES,
+    lightAzimuth: 0,
+    lightElevation: 45,
+    shadowSoftness: 1,
+    shadowOpacity: 80,
+  };
+
+  const layerState = {
+    bg: { visible: true },
+    card: { visible: true, castShadow: true },
+  };
+
+  const layerVals = (extra = {}) => ({
+    bg: { ...DEFAULT_LAYER_VALUES },
+    card: { ...DEFAULT_LAYER_VALUES, z: 30, ...extra },
+  });
+
+  // 1. Initial lit render: shadow vs unshadowed background
+  renderer.applyScene(sceneLighting, { lightEnabled: true });
+  renderer.applyLayers(layerVals(), layerState);
+  renderer.renderFrame();
+
+  const fondPixel = pixel(50, 100);
+  const ombrePixel = pixel(175, 60);
+  check(fondPixel[0] > 150, 'Lit background is illuminated');
+  check(ombrePixel[0] < fondPixel[0] - 15, 'Shadow pixel on background is darker than lit background');
+
+  // 2. Texture alpha: opaque left half casts shadow, transparent right half does not
+  const transparentPixel = pixel(225, 60);
+  check(ombrePixel[0] < transparentPixel[0] - 15, 'Opaque texture half casts shadow while transparent half does not');
+  check(Math.abs(transparentPixel[0] - fondPixel[0]) < 10, 'Transparent half lets background remain lit');
+
+  // 3. Contrast under high ambient (150) and direct (200)
+  renderer.applyScene(
+    { ...sceneLighting, ambient: 150, lightIntensity: 200, shadowOpacity: 80 },
+    { lightEnabled: true },
+  );
+  renderer.renderFrame();
+  const fondHigh = pixel(50, 100);
+  const ombreHigh = pixel(175, 60);
+  check(fondHigh[0] > fondPixel[0] + 30, 'Increasing light brightens the background');
+  check(ombreHigh[0] < fondHigh[0] - 20, 'Shadow maintains strong contrast under ambient 150 and direct 200');
+
+  // 4. Reveal mask: masking the left half suppresses its shadow
+  renderer.applyScene(sceneLighting, { lightEnabled: true });
+  // Angle 180 with reveal 50 masks the left half of the card
+  renderer.applyLayers(layerVals({ reveal: 50, revealAngle: 180 }), layerState);
+  renderer.renderFrame();
+  const ombreRevealed = pixel(175, 60);
+  check(Math.abs(ombreRevealed[0] - fondPixel[0]) < 10, 'Reveal mask suppresses shadow casting on masked region');
+
+  // Reset reveal
+  renderer.applyLayers(layerVals({ reveal: 100 }), layerState);
+  renderer.renderFrame();
+  check(pixel(175, 60)[0] < fondPixel[0] - 15, 'Full reveal restores shadow casting');
+
+  // 5. castShadow toggle
+  renderer.applyLayers(layerVals(), {
+    ...layerState,
+    card: { visible: true, castShadow: false },
+  });
+  renderer.renderFrame();
+  check(Math.abs(pixel(175, 60)[0] - fondPixel[0]) < 10, 'castShadow false disables shadow casting');
+
+  renderer.applyLayers(layerVals(), {
+    ...layerState,
+    card: { visible: true, castShadow: true },
+  });
+  renderer.renderFrame();
+  check(pixel(175, 60)[0] < fondPixel[0] - 15, 'castShadow true restores shadow casting');
+
+  // 6. Light toggle & sync when applyScene called after applyLayers
+  renderer.applyScene(sceneLighting, { lightEnabled: false });
+  renderer.renderFrame();
+  check(cardObj.mesh.castShadow === false, 'Disabling light sets castShadow to false');
+  check(cardObj.mesh.material === cardObj.basicMaterial, 'Disabling light switches to basicMaterial');
+  check(Math.abs(pixel(175, 60)[0] - pixel(50, 100)[0]) < 10, 'No shadow when light is disabled');
+
+  // Call applyLayers FIRST with castShadow: true while light was disabled
+  renderer.applyLayers(layerVals(), {
+    ...layerState,
+    card: { visible: true, castShadow: true },
+  });
+  // Call applyScene SECOND with light re-enabled
+  renderer.applyScene(sceneLighting, { lightEnabled: true });
+  check(cardObj.mesh.castShadow === true, 'Reactivating light restores castShadow when applyScene called after applyLayers');
+  check(bgObj.mesh.castShadow === false, 'Background castShadow remains false after light reactivation');
+  renderer.renderFrame();
+  check(pixel(175, 60)[0] < fondPixel[0] - 15, 'Shadow is rendered after light reactivation');
+
+  // 7. Export sizing & DoF
+  renderer.setExportSize(800, 400);
+  renderer.renderFrame();
+  const fondExport = pixel(100, 200);
+  const ombreExport = pixel(350, 120);
+  check(ombreExport[0] < fondExport[0] - 15, 'Shadow rendered correctly at export sizing');
+
+  renderer.setExportSize(400, 200);
+  renderer.setDof(true, 100, 1, 1);
+  renderer.renderFrame();
+  check(renderer.gl.getError() === renderer.gl.NO_ERROR, 'DoF compiles and renders without error');
+  check(renderer.scene.overrideMaterial === null, 'DoF preserves scene overrideMaterial state');
+  check(cardObj.mesh.material === cardObj.lambertMaterial, 'DoF restores lambertMaterial');
+
+  renderer.setDof(false, 100, 0, 1);
+  renderer.renderFrame();
+  check(pixel(175, 60)[0] < fondPixel[0] - 15, 'Direct render shadow restored after disabling DoF');
+
+  window.shadowRegression = { ok: true, checks };
+  report.textContent = JSON.stringify(window.shadowRegression, null, 2);
+} catch (error) {
+  window.shadowRegression = { ok: false, error: String(error), stack: error.stack, checks };
+  report.textContent = JSON.stringify(window.shadowRegression, null, 2);
+}
+</script></html>

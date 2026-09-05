@@ -1,5 +1,5 @@
 import type { ChannelId, LayerChannelId, CameraChannelId, SceneChannelId } from './channels';
-import { DEFAULT_CAMERA_VALUES, DEFAULT_SCENE_VALUES, CAMERA_CHANNELS, SCENE_CHANNELS, LAYER_CHANNELS } from './channels';
+import { DEFAULT_CAMERA_VALUES, DEFAULT_SCENE_VALUES, DEFAULT_LAYER_VALUES, CAMERA_CHANNELS, SCENE_CHANNELS, LAYER_CHANNELS } from './channels';
 import type { CameraValues, LayerValues, SceneValues } from './channels';
 
 export type Easing = 'linear' | 'expo.out' | 'quart.out' | 'quint.inOut' | 'cubic.inOut' | 'back.out';
@@ -105,7 +105,7 @@ export function evaluateTimeline(keyframes: Keyframe[], t: number): EvaluatedTim
 }
 
 export function resolveLayerValues(base: LayerValues, evaluated: Partial<LayerValues> | undefined): LayerValues {
-  return evaluated ? { ...base, ...evaluated } : base;
+  return { ...DEFAULT_LAYER_VALUES, ...base, ...evaluated };
 }
 
 export function resolveCameraValues(base: CameraValues, evaluated: Partial<CameraValues>): CameraValues {
