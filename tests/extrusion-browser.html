@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><title>Extrusion regression</title>
+<style>body{background:#20242b;color:white;font:16px system-ui}canvas{border:1px solid #777}</style>
+<canvas></canvas><pre id="result">Running…</pre>
+<script type="module">
+import { DioramaRenderer } from '/src/studio/engine/renderer.ts';
+import { DEFAULT_LAYER_VALUES, DEFAULT_SCENE_VALUES } from '/src/studio/model/channels.ts';
+import { resolveLayerValues } from '/src/studio/model/timeline.ts';
+const checks=[];
+const check=(ok,message)=>{if(!ok)throw Error(message);checks.push(message)};
+try{
+ const r=new DioramaRenderer(document.querySelector('canvas'));window.extrusionRenderer=r;
+ r.setFrameAspect(2);r.setExportSize(400,200);r.camera.fov=60;r.camera.position.set(0,0,250);r.camera.lookAt(0,0,0);r.camera.updateProjectionMatrix();
+ const layer={id:'card',role:'image',order:0,rect:{x:140,y:60,w:120,h:80}};
+ await r.buildLayers({viewport:{width:400,height:200},layers:[layer],groups:[]},{elements:new Map([['card',document.body]]),rects:new Map(),captureLayerTexture:async(id,ctx,w,h)=>{ctx.fillStyle='#f6a43c';ctx.fillRect(0,0,w,h);ctx.clearRect(45,25,30,30)}});
+ const obj=r.layers.get('card'); const state={card:{visible:true,castShadow:true}};
+ const render=(extra={})=>{r.applyLayers({card:{...DEFAULT_LAYER_VALUES,rotY:55,...extra}},state);r.renderFrame()};
+ const pixels=()=>{const p=new Uint8Array(r.canvas.width*r.canvas.height*4);r.gl.readPixels(0,0,r.canvas.width,r.canvas.height,r.gl.RGBA,r.gl.UNSIGNED_BYTE,p);return p};
+ r.applyScene(DEFAULT_SCENE_VALUES,{lightEnabled:false});render(); const flat=pixels();
+ check(!obj.extrusion.mesh.visible,'Zero thickness preserves the original plane');
+ const front=Array.from(obj.mesh.geometry.attributes.position.array);render({thickness:20});const thick=pixels();
+ let added=0;for(let i=3;i<thick.length;i+=4)if(thick[i]>200 && flat[i]<10)added++;
+ check(added>100,'Rotated extrusion adds visible side pixels');
+ check(JSON.stringify(front)===JSON.stringify(Array.from(obj.mesh.geometry.attributes.position.array)),'Thickness preserves the front face position');
+ check(obj.extrusion.mesh.parent===obj.container,'Extrusion follows the layer transform');
+ render({thickness:20,rotY:180});const back=pixels();
+ check(back[(100*400+200)*4+3]===0,'Transparent texture hole remains transparent from the back');
+ check(back.some((v,i)=>i%4===3&&v>200),'Back face is visible after a half turn');
+ render({thickness:20,reveal:0});check(pixels().every((v,i)=>i%4!==3||v===0),'Zero reveal hides front, sides and back');
+ render({thickness:20,tlX:10});check(obj.extrusion.mesh.geometry.boundingBox.min.z===-20,'Extrusion depth follows thickness');
+ r.applyScene(DEFAULT_SCENE_VALUES,{lightEnabled:true});r.renderFrame();check(obj.extrusion.mesh.material.isMeshLambertMaterial&&obj.extrusion.mesh.castShadow,'Light activation synchronizes extrusion material and shadows');
+ r.applyLayers({card:{...DEFAULT_LAYER_VALUES,thickness:20,rotY:55}},{card:{visible:true,castShadow:false}});r.applyScene(DEFAULT_SCENE_VALUES,{lightEnabled:true});r.renderFrame();check(!obj.extrusion.mesh.castShadow,'Layer shadow toggle includes extrusion');
+ r.setDof(true,250,1,1);r.renderFrame();check(r.gl.getError()===r.gl.NO_ERROR&&r.scene.overrideMaterial===null,'Extrusion renders with depth of field');
+ r.setDof(false,250,0,1);r.setExportSize(800,400);render({thickness:20});check(pixels().some((v,i)=>i%4===3&&v>200),'Extrusion is rendered at export resolution');
+ check(r.renderer.info.programs.every(p=>!p.diagnostics||p.diagnostics.runnable!==false),'Extrusion shaders compile');
+ const legacy=resolveLayerValues({base:{opacity:100}},[],0);check(legacy.thickness===0,'Legacy layers resolve to zero thickness');
+ r.dispose();check(obj.extrusion.mesh.parent===null,'Extrusion detaches on disposal');
+ document.querySelector('#result').textContent=JSON.stringify({ok:true,checks},null,2);
+}catch(error){document.querySelector('#result').textContent=JSON.stringify({ok:false,error:String(error),checks},null,2)}
+</script>

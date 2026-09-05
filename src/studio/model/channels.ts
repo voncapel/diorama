@@ -32,7 +32,9 @@ export type ChannelGroup =
   | 'rotation'
   | 'scale'
   | 'distort'
+  | 'reveal'
   | 'appearance'
+  | 'volume'
   | 'shadow'
   | 'camera'
   | 'lens'
@@ -43,7 +45,9 @@ export const CHANNEL_GROUP_LABELS: Record<ChannelGroup, string> = {
   rotation: 'Rotation',
   scale: 'Échelle',
   distort: 'Distorsion',
+  reveal: 'Révélation',
   appearance: 'Apparence',
+  volume: 'Volume',
   shadow: 'Ombre',
   camera: 'Caméra',
   lens: 'Objectif',
@@ -69,7 +73,11 @@ export const LAYER_CHANNELS = [
   { id: 'brY', target: 'layer', group: 'distort', label: 'Bas droit Y', unit: 'px', step: 1, precision: 0, default: 0 },
   { id: 'blX', target: 'layer', group: 'distort', label: 'Bas gauche X', unit: 'px', step: 1, precision: 0, default: 0 },
   { id: 'blY', target: 'layer', group: 'distort', label: 'Bas gauche Y', unit: 'px', step: 1, precision: 0, default: 0 },
+  { id: 'reveal', target: 'layer', group: 'reveal', label: 'Ouverture', unit: '%', step: 1, precision: 0, default: 100, min: 0, max: 100 },
+  { id: 'revealAngle', target: 'layer', group: 'reveal', label: 'Direction', unit: '°', step: 1, precision: 0, default: 0, min: -180, max: 180 },
+  { id: 'revealFeather', target: 'layer', group: 'reveal', label: 'Douceur intérieure', unit: 'px', step: 1, precision: 0, default: 0, min: 0, max: 1000 },
   { id: 'opacity', target: 'layer', group: 'appearance', label: 'Opacité', unit: '%', step: 1, precision: 0, default: 100, min: 0, max: 100, soft: [0, 100] },
+  { id: 'thickness', target: 'layer', group: 'volume', label: 'Épaisseur', unit: 'px', step: 0.5, precision: 1, default: 0, min: 0, max: 200, soft: [0, 30] },
   { id: 'shadowOpacity', target: 'layer', group: 'shadow', label: 'Intensité', unit: '%', step: 1, precision: 0, default: 100, min: 0, max: 100, soft: [0, 100] },
 ] as const satisfies readonly ChannelDef[];
 

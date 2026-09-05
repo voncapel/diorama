@@ -1,0 +1,87 @@
+<!doctype html><html><meta charset="utf-8"><title>Layer reveal regression</title>
+<style>body{background:#20242b;color:white;font:16px system-ui}canvas{border:1px solid #777}</style>
+<p>Reveal regression: source stays fixed while the mask opens.</p><canvas id="preview"></canvas><pre id="result">Running…</pre>
+<script type="module">
+import { DioramaRenderer } from '/src/studio/engine/renderer.ts';
+import { resolveLayerValues } from '/src/studio/model/timeline.ts';
+import { DEFAULT_LAYER_VALUES, DEFAULT_SCENE_VALUES } from '/src/studio/model/channels.ts';
+const report = document.querySelector('#result');
+const checks = [];
+const check = (condition, message) => { if (!condition) throw new Error(message); checks.push(message); };
+try {
+  const canvas = document.querySelector('canvas');
+  const renderer = new DioramaRenderer(canvas);
+  renderer.setExportSize(400, 200);
+  renderer.setFrameAspect(2);
+  renderer.camera.fov = 90;
+  renderer.camera.position.set(0, 0, 100);
+  renderer.camera.lookAt(0, 0, 0);
+  renderer.camera.updateProjectionMatrix();
+  const layer = { id:'test', role:'zap', label:'Test', order:0, rect:{x:100,y:50,w:200,h:100} };
+  const bundle = { viewport:{width:400,height:200}, layers:[layer], groups:[] };
+  const built = {
+    elements: new Map([['test', document.body]]), rects: new Map(),
+    captureLayerTexture: async (id, ctx, w, h) => {
+      ctx.fillStyle='#ff0000'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle='#ffffff'; ctx.font='bold 24px sans-serif'; ctx.fillText('FIXED CONTENT',5,30);
+    },
+  };
+  await renderer.buildLayers(bundle,built);
+  const obj = renderer.layers.get('test');
+  const positions = Array.from(obj.mesh.geometry.attributes.position.array);
+  const uvs = Array.from(obj.mesh.geometry.attributes.uv.array);
+  const state = {test:{visible:true,castShadow:true}};
+  const values = (reveal, extra={}) => ({test:{...DEFAULT_LAYER_VALUES,reveal,...extra}});
+  const pixel = (x,y) => { const p=new Uint8Array(4); renderer.gl.readPixels(x,y,1,1,renderer.gl.RGBA,renderer.gl.UNSIGNED_BYTE,p); return [...p]; };
+  renderer.applyScene(DEFAULT_SCENE_VALUES,{lightEnabled:false});
+  renderer.applyLayers(values(50),state); renderer.renderFrame();
+  check(pixel(140,90)[0]>200 && pixel(260,90)[3]===0,'Horizontal reveal clips only the right half');
+  check(renderer.pick(-0.3,0)==='test' && renderer.pick(0.3,0)===null,'Picking respects the reveal');
+  renderer.applyLayers(values(50,{revealFeather:40}),state); renderer.renderFrame();
+  const middle = pixel(200,90)[3];
+  check(middle>60 && middle<190,'Feather renders partial alpha');
+  renderer.applyLayers(values(0),state); renderer.renderFrame();
+  check(pixel(140,90)[3]===0 && renderer.pick(-0.3,0)===null,'Zero reveal is fully hidden');
+  renderer.applyLayers(values(100,{revealFeather:40}),state); renderer.renderFrame();
+  check(pixel(290,90)[3]===255,'Full reveal has no residual feather');
+  check(JSON.stringify(positions)===JSON.stringify(Array.from(obj.mesh.geometry.attributes.position.array)),'Reveal preserves content geometry');
+  check(JSON.stringify(uvs)===JSON.stringify(Array.from(obj.mesh.geometry.attributes.uv.array)),'Reveal preserves content UVs');
+  renderer.applyLayers(values(100,{scale:150}),state);
+  check(obj.container.scale.x===1.5 && obj.mesh.scale.x===1,'Scale belongs to the container');
+  renderer.applyScene(DEFAULT_SCENE_VALUES,{lightEnabled:true});
+  renderer.applyLayers(values(50,{revealFeather:20}),state); renderer.renderFrame();
+  check(renderer.gl.getError()===renderer.gl.NO_ERROR,'Lit material and shadow pass compile');
+  const programs = renderer.renderer.info.programs;
+  check(programs.every(p=>!p.diagnostics || p.diagnostics.runnable!==false),'All WebGL programs are runnable');
+  renderer.applyLayers(values(50,{revealFeather:20}),state); renderer.renderFrame();
+  renderer.setDof(true,100,1,1);
+  renderer.renderFrame();
+  check(renderer.gl.getError()===renderer.gl.NO_ERROR && renderer.scene.overrideMaterial===null,'Depth of field preserves renderer state');
+  check(obj.mesh.material===obj.lambertMaterial,'Depth of field restores layer materials');
+  const depthPixel = new Uint16Array(4);
+  renderer.renderer.readRenderTargetPixels(renderer.bokeh._renderTargetDepth,260,90,1,1,depthPixel);
+  check(depthPixel.every(value=>value===15360),'Masked pixels do not write depth in the bokeh pass');
+  renderer.setDof(false,100,0,1);
+  const oldValues = {...DEFAULT_LAYER_VALUES};
+  delete oldValues.reveal; delete oldValues.revealAngle; delete oldValues.revealFeather;
+  check(resolveLayerValues(oldValues).reveal===100,'Legacy layers default to fully revealed');
+  const child = {...layer,id:'child',order:1,rect:{x:210,y:80,w:40,h:40}};
+  built.elements.set('child',document.body);
+  bundle.layers.push(child);
+  bundle.groups=[{id:'g',parentId:'test',childIds:['child']}];
+  await renderer.buildLayers(bundle,built);
+  const groupedValues = {...values(100,{scale:200}),child:{...DEFAULT_LAYER_VALUES}};
+  renderer.applyLayers(groupedValues,{...state,child:{visible:true}});
+  const childObj=renderer.layers.get('child');
+  check(childObj.container.parent===renderer.layers.get('test').container,'Children attach to parent containers');
+  check(Math.abs(renderer.layerWorldRect('child').cx-60)<0.01,'Parent scaling moves the child correctly');
+  renderer.applyLayers(groupedValues,{test:{visible:false},child:{visible:true}});
+  check(renderer.layerScreenQuad('child',400,200)===null,'Hidden parent suppresses child selection handles');
+  renderer.disposeLayers();
+  check(renderer.layers.size===0 && !childObj.container.parent,'Grouped containers detach on disposal');
+  await renderer.buildLayers({...bundle,layers:[layer],groups:[]},built);
+  renderer.applyLayers(values(50,{revealFeather:20}),state); renderer.renderFrame();
+  window.revealRegression = {ok:true,checks};
+  report.textContent=JSON.stringify(window.revealRegression,null,2);
+} catch(error) { window.revealRegression={ok:false,error:String(error),checks};report.textContent=JSON.stringify(window.revealRegression,null,2); }
+</script></html>
