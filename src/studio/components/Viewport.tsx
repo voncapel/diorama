@@ -148,19 +148,36 @@ export function Viewport() {
     viewportHandle.renderer = renderer;
     renderer.setFrameAspect(frameAspect(useStudio.getState().frame));
 
+    // The tab can be created in the background with a 0×0 viewport; a
+    // ResizeObserver started in that state does not always fire once the tab
+    // becomes visible, so the size is also re-checked from other signals.
+    let lastMeasured = { width: 0, height: 0 };
     const measure = () => {
       const rect = container.getBoundingClientRect();
-      setContainerSize({ width: rect.width, height: rect.height });
+      const width = rect.width;
+      const height = rect.height;
+      if ((width === 0 || height === 0) && lastMeasured.width > 0 && lastMeasured.height > 0) return;
+      if (width === lastMeasured.width && height === lastMeasured.height) return;
+      lastMeasured = { width, height };
+      setContainerSize({ width, height });
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(container);
+    document.addEventListener('visibilitychange', measure);
+    window.addEventListener('resize', measure);
 
     let lastGroupsRef: CaptureGroup[] | undefined;
     let raf = 0;
     const loop = () => {
       const st = useStudio.getState();
       const currentBox = boxRef.current;
+
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      if (cw > 0 && ch > 0 && (cw !== lastMeasured.width || ch !== lastMeasured.height)) {
+        measure();
+      }
 
       if (!st.exporting && !st.agentRendering && rendererRef.current) {
         if (st.bundle?.groups !== lastGroupsRef) {
@@ -377,6 +394,8 @@ export function Viewport() {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      document.removeEventListener('visibilitychange', measure);
+      window.removeEventListener('resize', measure);
       if (sceneRef.current) disposeScene(sceneRef.current);
       renderer.dispose();
       rendererRef.current = null;
